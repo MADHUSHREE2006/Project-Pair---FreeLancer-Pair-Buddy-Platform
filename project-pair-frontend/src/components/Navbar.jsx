@@ -37,6 +37,7 @@ export default function Navbar() {
     { label: 'Find Pairs', to: '/projects' },
     { label: 'Portfolio', to: '/portfolio' },
     { label: 'Dashboard', to: '/dashboard' },
+    { label: 'Analytics', to: '/analytics' },
   ]
 
   return (

@@ -26,6 +26,7 @@ const Chat = lazy(() => import('./pages/Chat'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const Analytics = lazy(() => import('./pages/Analytics'))
 
 const PageWrapper = ({ children }) => (
   <motion.div
@@ -75,6 +76,7 @@ function AppContent() {
             <Route path="/dashboard" element={<ProtectedRoute><PageWrapper><Dashboard /></PageWrapper></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><PageWrapper><Chat /></PageWrapper></ProtectedRoute>} />
             <Route path="/portfolio" element={<ProtectedRoute><PageWrapper><Portfolio /></PageWrapper></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><PageWrapper><Analytics /></PageWrapper></ProtectedRoute>} />
 
             {/* 404 */}
             <Route path="*" element={<PageWrapper><NotFound /></PageWrapper>} />

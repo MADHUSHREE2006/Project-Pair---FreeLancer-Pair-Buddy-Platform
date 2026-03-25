@@ -1,5 +1,6 @@
 import { PairRequest, Project, User } from '../models/index.js'
 import { createNotification } from './notificationsController.js'
+import { sendProposalReceivedEmail, sendProposalResponseEmail } from '../services/email.js'
 
 export const sendProposal = async (req, res) => {
   try {
@@ -26,6 +27,9 @@ export const sendProposal = async (req, res) => {
       body: `${sender.name} wants to pair on "${project.title}"`,
       link: `/projects/${project_id}`,
     })
+    // Send email to project owner
+    const owner = await User.findByPk(project.owner_id, { attributes: ['email', 'name'] })
+    await sendProposalReceivedEmail(owner.email, owner.name, sender.name, project.title, project_id)
 
     res.status(201).json(proposal)
   } catch (err) {
@@ -65,6 +69,9 @@ export const respondToProposal = async (req, res) => {
       body: `${responder.name} ${status === 'accepted' ? 'accepted' : 'declined'} your proposal for "${proposal.Project?.title}"`,
       link: `/projects/${proposal.project_id}`,
     })
+    // Send email to proposal sender
+    const sender = await User.findByPk(proposal.sender_id, { attributes: ['email', 'name'] })
+    await sendProposalResponseEmail(sender.email, sender.name, status, proposal.Project?.title)
 
     res.json(proposal)
   } catch (err) {

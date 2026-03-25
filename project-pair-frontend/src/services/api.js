@@ -1,35 +1,66 @@
 import axios from 'axios'
 
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: BASE,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 10000, // 10s timeout — prevents hanging forever on connection refused
+  timeout: 15000,
+  withCredentials: true, // send httpOnly refresh cookie
 })
 
-// Attach JWT on every request
+// Attach access token on every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pp_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-// Global response error handler
+let isRefreshing = false
+let failedQueue = []
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(p => error ? p.reject(error) : p.resolve(token))
+  failedQueue = []
+}
+
+// Auto-refresh access token on 401
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    // Auto-logout on 401
-    if (err.response?.status === 401) {
-      localStorage.removeItem('pp_token')
-      localStorage.removeItem('pp_user')
-      window.location.href = '/login'
-      return Promise.reject(err)
+  async (err) => {
+    const original = err.config
+    if (err.response?.status === 401 && !original._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject })
+        }).then(token => {
+          original.headers.Authorization = `Bearer ${token}`
+          return api(original)
+        })
+      }
+      original._retry = true
+      isRefreshing = true
+      try {
+        const res = await axios.post(`${BASE}/auth/refresh`, {}, { withCredentials: true })
+        const newToken = res.data.token
+        localStorage.setItem('pp_token', newToken)
+        api.defaults.headers.common.Authorization = `Bearer ${newToken}`
+        processQueue(null, newToken)
+        original.headers.Authorization = `Bearer ${newToken}`
+        return api(original)
+      } catch (refreshErr) {
+        processQueue(refreshErr, null)
+        localStorage.removeItem('pp_token')
+        localStorage.removeItem('pp_user')
+        window.location.href = '/login'
+        return Promise.reject(refreshErr)
+      } finally {
+        isRefreshing = false
+      }
     }
-
-    // Connection refused / server down — give a clear message
-    if (err.code === 'ERR_NETWORK' || err.code === 'ECONNREFUSED' || !err.response) {
-      err.message = 'Cannot connect to server. Make sure the backend is running on port 5000.'
+    if (err.code === 'ERR_NETWORK' || !err.response) {
+      err.message = 'Cannot connect to server. Make sure the backend is running.'
     }
-
     return Promise.reject(err)
   }
 )
@@ -39,6 +70,8 @@ export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
   me: () => api.get('/auth/me'),
+  refresh: () => api.post('/auth/refresh'),
+  logout: () => api.post('/auth/logout'),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 }
@@ -92,6 +125,23 @@ export const messagesAPI = {
   getConversations: () => api.get('/messages/conversations'),
   getConversation: (userId) => api.get(`/messages/${userId}`),
   send: (data) => api.post('/messages', data),
+}
+
+// ── Upload ─────────────────────────────────────────────
+export const uploadAPI = {
+  avatar: (file) => {
+    const fd = new FormData(); fd.append('avatar', file)
+    return api.post('/upload/avatar', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  file: (file) => {
+    const fd = new FormData(); fd.append('file', file)
+    return api.post('/upload/file', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+}
+
+// ── Analytics ──────────────────────────────────────────
+export const analyticsAPI = {
+  get: () => api.get('/analytics'),
 }
 
 export default api

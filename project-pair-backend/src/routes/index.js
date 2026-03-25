@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { body, validationResult } from 'express-validator'
+import { body, query, validationResult } from 'express-validator'
 import rateLimit from 'express-rate-limit'
-import { register, login, getMe, forgotPassword, resetPassword } from '../controllers/authController.js'
+import { register, login, refreshToken, logout, getMe, forgotPassword, resetPassword } from '../controllers/authController.js'
 import { getProjects, getProject, createProject, updateProject, deleteProject } from '../controllers/projectController.js'
 import { sendProposal, getMyProposals, getReceivedProposals, respondToProposal } from '../controllers/pairController.js'
 import { getProjectTasks, createTask, updateTask, deleteTask } from '../controllers/tasksController.js'
@@ -9,6 +9,9 @@ import { getConversation, getConversations, sendMessage } from '../controllers/m
 import { getUser, updateMe } from '../controllers/userController.js'
 import { getUserReviews, createReview } from '../controllers/reviewsController.js'
 import { getNotifications, markAllRead, markOneRead } from '../controllers/notificationsController.js'
+import { getAnalytics } from '../controllers/analyticsController.js'
+import { uploadAvatar as uploadAvatarCtrl, uploadChatFile } from '../controllers/uploadController.js'
+import { uploadAvatar, uploadFile, uploadLocal, isCloudinaryConfigured } from '../services/upload.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = Router()
@@ -41,6 +44,8 @@ router.post('/auth/login', authLimiter,
   validate, login
 )
 router.get('/auth/me', authenticate, getMe)
+router.post('/auth/refresh', refreshToken)
+router.post('/auth/logout', logout)
 router.post('/auth/forgot-password', authLimiter,
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   validate, forgotPassword
@@ -115,5 +120,14 @@ router.put('/proposals/:id', authenticate,
   body('status').isIn(['accepted', 'rejected']).withMessage('Status must be accepted or rejected'),
   validate, respondToProposal
 )
+
+// ── Upload ────────────────────────────────────────────
+const avatarMiddleware = isCloudinaryConfigured() ? uploadAvatar : uploadLocal
+const fileMiddleware = isCloudinaryConfigured() ? uploadFile : uploadLocal
+router.post('/upload/avatar', authenticate, avatarMiddleware, uploadAvatarCtrl)
+router.post('/upload/file', authenticate, fileMiddleware, uploadChatFile)
+
+// ── Analytics ─────────────────────────────────────────
+router.get('/analytics', authenticate, getAnalytics)
 
 export default router

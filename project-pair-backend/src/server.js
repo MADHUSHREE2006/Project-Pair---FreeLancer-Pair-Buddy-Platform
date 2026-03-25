@@ -3,9 +3,12 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import cors from 'cors'
 import helmet from 'helmet'
+import cookieParser from 'cookie-parser'
+import xssClean from 'xss-clean'
 import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
 import routes from './routes/index.js'
+import { logger, requestLogger } from './services/logger.js'
 
 dotenv.config()
 
@@ -17,6 +20,8 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
 // ── Security ──────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: false }))
+app.use(xssClean())
+app.use(cookieParser())
 
 // ── CORS ──────────────────────────────────────────────
 const allowedOrigins = CLIENT_URL.split(',').map(o => o.trim())
@@ -30,15 +35,10 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
+app.use('/uploads', express.static('uploads')) // serve local uploads fallback
 
 // ── Request logger ────────────────────────────────────
-app.use((req, _res, next) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`${new Date().toISOString().slice(11,19)} ${req.method} ${req.path}`)
-  }
-  next()
-})
-
+app.use(requestLogger)
 app.use('/api', routes)
 
 app.get('/health', (_, res) => res.json({
@@ -49,8 +49,8 @@ app.get('/health', (_, res) => res.json({
 }))
 
 app.use((err, req, res, next) => {
-  console.error(err.stack)
-  res.status(500).json({ error: 'Internal server error' })
+  logger.error(err.message, { stack: err.stack, path: req.path })
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' })
 })
 
 // ── Socket.io setup ───────────────────────────────────
@@ -163,9 +163,8 @@ global.io = io
 
 // ── Start server ──────────────────────────────────────
 httpServer.listen(PORT, () => {
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`)
-  console.log(`   Socket.io enabled`)
-  console.log(`   Health check: http://localhost:${PORT}/health\n`)
+  logger.info(`🚀 Server running on http://localhost:${PORT}`)
+  logger.info(`   Health check: http://localhost:${PORT}/health`)
   connectDB()
 })
 

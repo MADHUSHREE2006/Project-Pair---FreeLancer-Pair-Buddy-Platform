@@ -46,7 +46,8 @@ export const AuthProvider = ({ children }) => {
     return userData
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try { await authAPI.logout() } catch {}
     disconnectSocket()
     setUser(null)
     localStorage.removeItem('pp_token')
