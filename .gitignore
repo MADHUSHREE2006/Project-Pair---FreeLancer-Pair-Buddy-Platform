@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+project-pair-frontend/node_modules/
+project-pair-backend/node_modules/
+
+# Environment variables — NEVER commit real credentials
+project-pair-backend/.env
+project-pair-frontend/.env
+
+# Build output
+project-pair-frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite cache
+project-pair-frontend/.vite/
