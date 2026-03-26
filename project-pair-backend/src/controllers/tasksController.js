@@ -53,15 +53,16 @@ export const updateTask = async (req, res) => {
     const task = await Task.findByPk(req.params.id)
     if (!task) return res.status(404).json({ error: 'Task not found' })
 
-    // Only creator or assignee can update
-    if (task.created_by !== req.user.id && task.assignee_id !== req.user.id) {
+    // Project owner can also update tasks on their project
+    const project = await Project.findByPk(task.project_id, { attributes: ['owner_id'] })
+    const isProjectOwner = project?.owner_id === req.user.id
+    if (!isProjectOwner && task.created_by !== req.user.id && task.assignee_id !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to update this task' })
     }
 
     const allowed = ['title', 'description', 'status', 'priority', 'assignee_id', 'due_date']
     const updates = {}
     allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f] })
-
     await task.update(updates)
     const full = await Task.findByPk(task.id, {
       include: [
@@ -75,16 +76,16 @@ export const updateTask = async (req, res) => {
   }
 }
 
-// DELETE /api/tasks/:id
 export const deleteTask = async (req, res) => {
   try {
     const task = await Task.findByPk(req.params.id)
     if (!task) return res.status(404).json({ error: 'Task not found' })
 
-    if (task.created_by !== req.user.id && task.assignee_id !== req.user.id) {
+    const project = await Project.findByPk(task.project_id, { attributes: ['owner_id'] })
+    const isProjectOwner = project?.owner_id === req.user.id
+    if (!isProjectOwner && task.created_by !== req.user.id && task.assignee_id !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to delete this task' })
     }
-
     await task.destroy()
     res.json({ message: 'Task deleted' })
   } catch (err) {

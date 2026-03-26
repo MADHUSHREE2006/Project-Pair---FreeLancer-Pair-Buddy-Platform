@@ -43,9 +43,10 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body
     const user = await User.findOne({ where: { email } })
-    if (!user) return res.status(400).json({ error: 'Invalid credentials' })
-    const valid = await bcrypt.compare(password, user.password)
-    if (!valid) return res.status(400).json({ error: 'Invalid credentials' })
+    // Always run bcrypt to prevent timing-based email enumeration
+    const DUMMY = '$2a$12$dummyhashtopreventtimingattacksonloginflowinproduction'
+    const valid = await bcrypt.compare(password, user?.password || DUMMY)
+    if (!user || !valid) return res.status(400).json({ error: 'Invalid credentials' })
     const payload = { id: user.id, email: user.email }
     const token = signAccess(payload)
     const refreshToken = signRefresh(payload)
@@ -94,13 +95,14 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body
     const user = await User.findOne({ where: { email } })
     if (!user) return res.json({ message: 'If that email exists, a reset link was sent.' })
-    const token = crypto.randomBytes(32).toString('hex')
-    await user.update({ reset_token: token, reset_token_expiry: new Date(Date.now() + 3600000) })
-    await sendPasswordResetEmail(email, token)
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+    await user.update({ reset_token: hashedToken, reset_token_expiry: new Date(Date.now() + 3600000) })
+    await sendPasswordResetEmail(email, rawToken) // send raw token in email
     const isDev = process.env.NODE_ENV !== 'production'
     res.json({
       message: 'If that email exists, a reset link was sent.',
-      ...(isDev && { dev_token: token }),
+      ...(isDev && { dev_token: rawToken }),
     })
   } catch (err) {
     logger.error('Forgot password error', { error: err.message })
@@ -111,7 +113,9 @@ export const forgotPassword = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body
-    const user = await User.findOne({ where: { reset_token: token } })
+    // Hash incoming token to compare with stored hash
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex')
+    const user = await User.findOne({ where: { reset_token: hashedToken } })
     if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' })
     if (new Date() > new Date(user.reset_token_expiry)) {
       return res.status(400).json({ error: 'Reset token has expired. Please request a new one.' })

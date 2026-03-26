@@ -41,7 +41,7 @@ export default function Dashboard() {
 
   // Fetch user's projects on mount
   useEffect(() => {
-    projectsAPI.getAll({ limit: 50 })
+    projectsAPI.getAll({ owner_id: user?.id, limit: 50 })
       .then(res => {
         const list = res.data.projects || res.data || []
         setProjects(list)

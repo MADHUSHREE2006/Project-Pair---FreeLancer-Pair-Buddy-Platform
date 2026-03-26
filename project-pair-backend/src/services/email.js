@@ -1,26 +1,42 @@
 import nodemailer from 'nodemailer'
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-})
+// Reuse single transporter instance (not recreated per email)
+let _transporter = null
+const getTransporter = () => {
+  if (!_transporter) {
+    _transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: false,
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    })
+  }
+  return _transporter
+}
 
-const FROM = `"ProjectPair" <${process.env.SMTP_USER}>`
+const FROM = () => `"ProjectPair" <${process.env.SMTP_USER}>`
 const BASE_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
-// Only send if SMTP is configured
 const canSend = () => !!(process.env.SMTP_USER && process.env.SMTP_PASS)
 
+const send = async (options) => {
+  if (!canSend()) {
+    console.warn('⚠️  Email skipped — SMTP_USER or SMTP_PASS not set in .env')
+    return
+  }
+  try {
+    const info = await getTransporter().sendMail({ from: FROM(), ...options })
+    console.log(`✅ Email sent to ${options.to} — MessageId: ${info.messageId}`)
+  } catch (err) {
+    console.error(`❌ Email failed to ${options.to}:`, err.message)
+    // Don't throw — email failure should never crash the API
+  }
+}
+
 export const sendPasswordResetEmail = async (email, token) => {
-  if (!canSend()) return
   const link = `${BASE_URL}/reset-password?token=${token}`
-  await transporter.sendMail({
-    from: FROM, to: email,
+  await send({
+    to: email,
     subject: 'Reset your ProjectPair password',
     html: `
       <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#111;color:#f5f5f5;border-radius:16px">
@@ -33,9 +49,8 @@ export const sendPasswordResetEmail = async (email, token) => {
 }
 
 export const sendProposalReceivedEmail = async (ownerEmail, ownerName, senderName, projectTitle, projectId) => {
-  if (!canSend()) return
-  await transporter.sendMail({
-    from: FROM, to: ownerEmail,
+  await send({
+    to: ownerEmail,
     subject: `New pair proposal on "${projectTitle}"`,
     html: `
       <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#111;color:#f5f5f5;border-radius:16px">
@@ -48,10 +63,9 @@ export const sendProposalReceivedEmail = async (ownerEmail, ownerName, senderNam
 }
 
 export const sendProposalResponseEmail = async (senderEmail, senderName, status, projectTitle) => {
-  if (!canSend()) return
   const accepted = status === 'accepted'
-  await transporter.sendMail({
-    from: FROM, to: senderEmail,
+  await send({
+    to: senderEmail,
     subject: `Your proposal was ${accepted ? 'accepted 🎉' : 'declined'}`,
     html: `
       <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#111;color:#f5f5f5;border-radius:16px">

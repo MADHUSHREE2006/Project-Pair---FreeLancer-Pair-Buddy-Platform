@@ -18,9 +18,17 @@ const router = Router()
 
 // Rate limiters
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const refreshLimiter = rateLimit({ // 🟠 FIX: rate limit refresh endpoint
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many refresh attempts.' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -44,7 +52,7 @@ router.post('/auth/login', authLimiter,
   validate, login
 )
 router.get('/auth/me', authenticate, getMe)
-router.post('/auth/refresh', refreshToken)
+router.post('/auth/refresh', refreshLimiter, refreshToken)
 router.post('/auth/logout', logout)
 router.post('/auth/forgot-password', authLimiter,
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),

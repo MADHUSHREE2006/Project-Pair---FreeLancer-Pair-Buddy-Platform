@@ -38,10 +38,10 @@ export const markOneRead = async (req, res) => {
 export const createNotification = async ({ user_id, type, title, body, link }) => {
   try {
     const notif = await Notification.create({ user_id, type, title, body, link })
-    // Emit via socket if user is online
-    const socketId = global.onlineUsers?.get(user_id)
-    if (socketId && global.io) {
-      global.io.to(socketId).emit('notification', notif.toJSON())
+    // Emit to all sockets for this user (multi-tab support)
+    const socketIds = global.onlineUsers?.get(user_id)
+    if (socketIds && global.io) {
+      socketIds.forEach(sid => global.io.to(sid).emit('notification', notif.toJSON()))
     }
     return notif
   } catch {}

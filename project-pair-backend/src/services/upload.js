@@ -24,17 +24,26 @@ const fileStorage = new CloudinaryStorage({
   }),
 })
 
+const ALLOWED_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf', 'application/zip',
+])
+
+const fileFilter = (req, file, cb) => {
+  if (ALLOWED_MIMES.has(file.mimetype)) cb(null, true)
+  else cb(new Error(`File type not allowed: ${file.mimetype}`), false)
+}
+
 const fileSizeLimit = { fileSize: 10 * 1024 * 1024 } // 10MB
 
-export const uploadAvatar = multer({ storage: avatarStorage, limits: fileSizeLimit }).single('avatar')
-export const uploadFile = multer({ storage: fileStorage, limits: fileSizeLimit }).single('file')
+export const uploadAvatar = multer({ storage: avatarStorage, limits: fileSizeLimit, fileFilter }).single('avatar')
+export const uploadFile = multer({ storage: fileStorage, limits: fileSizeLimit, fileFilter }).single('file')
 
-// Fallback: local disk storage when Cloudinary not configured
-const localStorage = multer.diskStorage({
+const localDiskStorage = multer.diskStorage({
   destination: 'uploads/',
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
 })
-export const uploadLocal = multer({ storage: localStorage, limits: fileSizeLimit }).single('file')
+export const uploadLocal = multer({ storage: localDiskStorage, limits: fileSizeLimit, fileFilter }).single('file')
 
 export const isCloudinaryConfigured = () =>
   !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)

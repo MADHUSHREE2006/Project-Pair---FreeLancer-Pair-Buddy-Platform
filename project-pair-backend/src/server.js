@@ -7,10 +7,12 @@ import cookieParser from 'cookie-parser'
 import xssClean from 'xss-clean'
 import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
+import { mkdirSync } from 'fs'
 import routes from './routes/index.js'
 import { logger, requestLogger } from './services/logger.js'
 
 dotenv.config()
+mkdirSync('uploads', { recursive: true }) // ensure uploads dir exists
 
 const app = express()
 const httpServer = createServer(app)
@@ -65,10 +67,14 @@ const io = new Server(httpServer, {
   },
 })
 
-// Map: userId (number) → socketId (string)
+// Map: userId → Set<socketId> (supports multiple tabs per user)
 global.onlineUsers = new Map()
 
-// JWT auth middleware for socket
+const getSocketIds = (userId) => global.onlineUsers.get(userId) || new Set()
+const emitToUser = (userId, event, data) => {
+  getSocketIds(userId).forEach(sid => io.to(sid).emit(event, data))
+}
+
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token
   if (!token) return next(new Error('No token'))
@@ -84,56 +90,36 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   const userId = socket.userId
-  global.onlineUsers.set(userId, socket.id)
-  console.log(`🟢 User ${userId} connected (socket: ${socket.id})`)
+  if (!global.onlineUsers.has(userId)) global.onlineUsers.set(userId, new Set())
+  global.onlineUsers.get(userId).add(socket.id)
+  logger.info(`🟢 User ${userId} connected (socket: ${socket.id})`)
 
-  // Broadcast online status to everyone
   io.emit('user_online', { userId })
 
-  // ── Send message ──────────────────────────────────
   socket.on('send_message', async (data) => {
     try {
       const { receiver_id, content } = data
       if (!receiver_id || !content?.trim()) return
-
-      // Persist to DB
       const { Message, User } = await import('./models/index.js')
-      const msg = await Message.create({
-        sender_id: userId,
-        receiver_id,
-        content: content.trim(),
-      })
+      const msg = await Message.create({ sender_id: userId, receiver_id, content: content.trim() })
       const full = await Message.findByPk(msg.id, {
         include: [
           { model: User, as: 'sender', attributes: ['id', 'name', 'email'] },
           { model: User, as: 'receiver', attributes: ['id', 'name', 'email'] },
         ],
       })
-
       const payload = full.toJSON()
-
-      // Send back to sender (confirm delivery)
       socket.emit('receive_message', payload)
-
-      // Send to receiver if online
-      const receiverSocketId = global.onlineUsers.get(receiver_id)
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('receive_message', payload)
-      }
+      emitToUser(receiver_id, 'receive_message', payload)
     } catch (err) {
       socket.emit('message_error', { error: err.message })
     }
   })
 
-  // ── Typing indicator ──────────────────────────────
   socket.on('typing', ({ receiver_id, isTyping }) => {
-    const receiverSocketId = global.onlineUsers.get(receiver_id)
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit('typing', { userId, isTyping })
-    }
+    emitToUser(receiver_id, 'typing', { userId, isTyping })
   })
 
-  // ── Mark messages as read ─────────────────────────
   socket.on('mark_read', async ({ sender_id }) => {
     try {
       const { Message } = await import('./models/index.js')
@@ -141,19 +127,20 @@ io.on('connection', (socket) => {
         { is_read: true },
         { where: { sender_id, receiver_id: userId, is_read: false } }
       )
-      // Notify sender their messages were read
-      const senderSocketId = global.onlineUsers.get(sender_id)
-      if (senderSocketId) {
-        io.to(senderSocketId).emit('messages_read', { by: userId })
-      }
+      emitToUser(sender_id, 'messages_read', { by: userId })
     } catch {}
   })
 
-  // ── Disconnect ────────────────────────────────────
   socket.on('disconnect', () => {
-    global.onlineUsers.delete(userId)
-    io.emit('user_offline', { userId })
-    console.log(`🔴 User ${userId} disconnected`)
+    const sockets = global.onlineUsers.get(userId)
+    if (sockets) {
+      sockets.delete(socket.id)
+      if (sockets.size === 0) {
+        global.onlineUsers.delete(userId)
+        io.emit('user_offline', { userId })
+      }
+    }
+    logger.info(`🔴 User ${userId} disconnected`)
   })
 })
 
@@ -180,7 +167,7 @@ async function connectDB() {
   try {
     const { default: sequelize } = await import('./config/database.js')
     await sequelize.authenticate()
-    await sequelize.sync({ alter: true })
+    await sequelize.sync({ alter: process.env.NODE_ENV !== 'production' })
     console.log('✅ MySQL connected and tables synced\n')
     global.dbConnected = true
   } catch (err) {

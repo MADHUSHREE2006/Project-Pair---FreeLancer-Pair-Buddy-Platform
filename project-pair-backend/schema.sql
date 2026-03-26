@@ -97,3 +97,11 @@ CREATE TABLE IF NOT EXISTS Messages (
   FOREIGN KEY (receiver_id) REFERENCES Users(id) ON DELETE CASCADE,
   INDEX idx_conversation (sender_id, receiver_id)
 );
+
+-- Performance indexes (run once after initial setup)
+ALTER TABLE Messages ADD INDEX IF NOT EXISTS idx_conversation (sender_id, receiver_id, is_read);
+ALTER TABLE Notifications ADD INDEX IF NOT EXISTS idx_user_unread (user_id, is_read);
+ALTER TABLE PairRequests ADD INDEX IF NOT EXISTS idx_receiver_status (receiver_id, status);
+ALTER TABLE Tasks ADD INDEX IF NOT EXISTS idx_project_status (project_id, status);
+ALTER TABLE Projects ADD INDEX IF NOT EXISTS idx_owner (owner_id);
+ALTER TABLE Projects ADD INDEX IF NOT EXISTS idx_category_status (category, status);

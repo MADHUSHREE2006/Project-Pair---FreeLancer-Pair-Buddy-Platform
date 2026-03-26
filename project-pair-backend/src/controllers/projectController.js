@@ -3,10 +3,11 @@ import { Op } from 'sequelize'
 
 export const getProjects = async (req, res) => {
   try {
-    const { search, category, page = 1, limit = 12 } = req.query
+    const { search, category, owner_id, page = 1, limit = 12 } = req.query
     const where = {}
     if (category && category !== 'All') where.category = category
     if (search) where.title = { [Op.like]: `%${search}%` }
+    if (owner_id) where.owner_id = parseInt(owner_id)
 
     const { rows, count } = await Project.findAndCountAll({
       where,

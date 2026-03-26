@@ -1,4 +1,5 @@
 import { PairRequest, Project, User } from '../models/index.js'
+import sequelize from '../config/database.js'
 import { createNotification } from './notificationsController.js'
 import { sendProposalReceivedEmail, sendProposalResponseEmail } from '../services/email.js'
 
@@ -51,17 +52,23 @@ export const getMyProposals = async (req, res) => {
 }
 
 export const respondToProposal = async (req, res) => {
+  const { status } = req.body
+  const t = await sequelize.transaction()
   try {
-    const { status } = req.body
     const proposal = await PairRequest.findByPk(req.params.id, {
       include: [{ model: Project }],
+      transaction: t,
     })
-    if (!proposal) return res.status(404).json({ error: 'Not found' })
-    if (proposal.receiver_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
-    await proposal.update({ status })
+    if (!proposal) { await t.rollback(); return res.status(404).json({ error: 'Not found' }) }
+    if (proposal.receiver_id !== req.user.id) { await t.rollback(); return res.status(403).json({ error: 'Forbidden' }) }
+    await proposal.update({ status }, { transaction: t })
+    await t.commit()
 
-    // Notify sender of decision
-    const responder = await User.findByPk(req.user.id, { attributes: ['name'] })
+    // Non-critical side effects after commit
+    const [responder, sender] = await Promise.all([
+      User.findByPk(req.user.id, { attributes: ['name'] }),
+      User.findByPk(proposal.sender_id, { attributes: ['email', 'name'] }),
+    ])
     await createNotification({
       user_id: proposal.sender_id,
       type: status === 'accepted' ? 'proposal_accepted' : 'proposal_rejected',
@@ -69,12 +76,10 @@ export const respondToProposal = async (req, res) => {
       body: `${responder.name} ${status === 'accepted' ? 'accepted' : 'declined'} your proposal for "${proposal.Project?.title}"`,
       link: `/projects/${proposal.project_id}`,
     })
-    // Send email to proposal sender
-    const sender = await User.findByPk(proposal.sender_id, { attributes: ['email', 'name'] })
     await sendProposalResponseEmail(sender.email, sender.name, status, proposal.Project?.title)
-
     res.json(proposal)
   } catch (err) {
+    await t.rollback()
     res.status(500).json({ error: err.message })
   }
 }

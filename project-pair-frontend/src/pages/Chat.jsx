@@ -30,9 +30,23 @@ export default function Chat() {
   const [connected, setConnected] = useState(false)
   const bottomRef = useRef(null)
   const typingTimer = useRef(null)
+  const activeUserRef = useRef(null) // 🔴 FIX: avoid stale closure in socket handler
   const socket = getSocket()
 
-  // ── Fetch conversations list ──────────────────────
+  // Keep ref in sync with state
+  useEffect(() => { activeUserRef.current = activeUser }, [activeUser])
+
+  // Cleanup typing timer and indicator on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(typingTimer.current)
+      const s = getSocket()
+      if (s && activeUserRef.current) {
+        s.emit('typing', { receiver_id: activeUserRef.current.userId, isTyping: false })
+      }
+    }
+  }, [])
+
   const fetchConversations = useCallback(async () => {
     try {
       const res = await messagesAPI.getConversations()
@@ -53,27 +67,25 @@ export default function Chat() {
 
     const onReceiveMessage = (msg) => {
       const partnerId = msg.sender_id === user?.id ? msg.receiver_id : msg.sender_id
+      const currentActiveUser = activeUserRef.current // 🔴 FIX: use ref not stale closure
 
-      // Add to active conversation if open
       setMessages(prev => {
         const alreadyExists = prev.some(m => m.id === msg.id)
         if (alreadyExists) return prev
-        if (activeUser?.userId === partnerId || activeUser?.userId === msg.sender_id) {
+        if (currentActiveUser?.userId === partnerId || currentActiveUser?.userId === msg.sender_id) {
           return [...prev, msg]
         }
         return prev
       })
 
-      // Update conversation list preview
       setConversations(prev => {
         const exists = prev.find(c => c.userId === partnerId)
         if (exists) {
           return prev.map(c => c.userId === partnerId
-            ? { ...c, lastMessage: msg.content, lastTime: msg.createdAt, unread: activeUser?.userId === partnerId ? 0 : c.unread + 1 }
+            ? { ...c, lastMessage: msg.content, lastTime: msg.createdAt, unread: currentActiveUser?.userId === partnerId ? 0 : (c.unread || 0) + 1 }
             : c
           )
         }
-        // New conversation — refresh list
         fetchConversations()
         return prev
       })

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Clock, DollarSign, Tag, User, X, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Clock, DollarSign, Tag, User, X, AlertCircle, Star, CheckCircle, XCircle, MessageSquare } from 'lucide-react'
 import { projectsAPI, proposalsAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useApp } from '../context/AppContext'
@@ -16,6 +16,8 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [proposals, setProposals] = useState([])
+  const [loadingProposals, setLoadingProposals] = useState(false)
 
   useEffect(() => {
     projectsAPI.getOne(id)
@@ -23,6 +25,31 @@ export default function ProjectDetail() {
       .catch(() => setError('Project not found or failed to load.'))
       .finally(() => setLoading(false))
   }, [id])
+
+  // Load received proposals when owner views their project
+  useEffect(() => {
+    if (!user || !project) return
+    if (user.id !== project.owner_id) return
+    setLoadingProposals(true)
+    proposalsAPI.getReceived()
+      .then(res => {
+        // Filter to only proposals for this project
+        const filtered = res.data.filter(p => p.project_id === parseInt(id))
+        setProposals(filtered)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingProposals(false))
+  }, [user, project, id])
+
+  const handleRespond = async (proposalId, status) => {
+    try {
+      await proposalsAPI.respond(proposalId, status)
+      setProposals(prev => prev.map(p => p.id === proposalId ? { ...p, status } : p))
+      showToast(status === 'accepted' ? 'Proposal accepted!' : 'Proposal declined', status === 'accepted' ? 'success' : 'info')
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to respond', 'error')
+    }
+  }
 
   if (loading) return <div style={{ paddingTop: 120 }}><Spinner text="Loading project..." /></div>
 
@@ -118,6 +145,111 @@ export default function ProjectDetail() {
                   {project.owner.role && <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{project.owner.role}</div>}
                   {project.owner.rating > 0 && <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>★ {project.owner.rating}</div>}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Received Proposals — visible to owner only */}
+          {isOwner && (
+            <div style={{ marginTop: 20 }}>
+              <h2 style={{ fontFamily: 'Space Grotesk', fontSize: 18, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MessageSquare size={18} color="var(--accent)" />
+                Pair Proposals
+                {proposals.length > 0 && (
+                  <span style={{ background: 'var(--accent)', color: '#000', borderRadius: 100, fontSize: 12, fontWeight: 700, padding: '2px 8px' }}>
+                    {proposals.length}
+                  </span>
+                )}
+              </h2>
+
+              {loadingProposals && (
+                <div style={{ color: 'var(--text-muted)', fontSize: 14, padding: '20px 0' }}>Loading proposals...</div>
+              )}
+
+              {!loadingProposals && proposals.length === 0 && (
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <MessageSquare size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+                  <p style={{ fontSize: 15, fontWeight: 600 }}>No proposals yet</p>
+                  <p style={{ fontSize: 13, marginTop: 4 }}>Share your project to attract pair partners</p>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {proposals.map((p, i) => (
+                  <motion.div key={p.id}
+                    initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                    style={{ background: 'var(--bg-card)', border: `1px solid ${p.status === 'accepted' ? 'rgba(34,197,94,0.3)' : p.status === 'rejected' ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`, borderRadius: 16, padding: '24px' }}>
+
+                    {/* Sender info */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {p.sender?.name?.[0] || '?'}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 700 }}>{p.sender?.name || 'Unknown'}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {p.sender?.role || 'Developer'}
+                            {p.sender?.rating > 0 && <span style={{ color: 'var(--accent)', marginLeft: 8 }}>★ {Number(p.sender.rating).toFixed(1)}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status badge */}
+                      <span style={{
+                        fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 100,
+                        background: p.status === 'accepted' ? 'rgba(34,197,94,0.1)' : p.status === 'rejected' ? 'rgba(239,68,68,0.1)' : 'rgba(249,115,22,0.1)',
+                        color: p.status === 'accepted' ? '#22c55e' : p.status === 'rejected' ? '#f87171' : 'var(--accent)',
+                        border: `1px solid ${p.status === 'accepted' ? 'rgba(34,197,94,0.2)' : p.status === 'rejected' ? 'rgba(239,68,68,0.2)' : 'rgba(249,115,22,0.2)'}`,
+                      }}>
+                        {p.status === 'pending' ? 'Pending' : p.status === 'accepted' ? '✓ Accepted' : '✗ Declined'}
+                      </span>
+                    </div>
+
+                    {/* Message */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+                      <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{p.message}</p>
+                    </div>
+
+                    {/* Skills + Timeline */}
+                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: p.status === 'pending' ? 16 : 0 }}>
+                      {Array.isArray(p.skills) && p.skills.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Skills</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {p.skills.map(s => (
+                              <span key={s} style={{ fontSize: 12, color: 'var(--accent)', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.2)', padding: '3px 10px', borderRadius: 6 }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {p.timeline && (
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Timeline</div>
+                          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.timeline}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Accept / Reject buttons — only for pending */}
+                    {p.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                          onClick={() => handleRespond(p.id, 'accepted')}
+                          style={{ flex: 1, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 10, padding: '10px', fontSize: 14, fontWeight: 700, cursor: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <CheckCircle size={15} /> Accept
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                          onClick={() => handleRespond(p.id, 'rejected')}
+                          style={{ flex: 1, background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px', fontSize: 14, fontWeight: 700, cursor: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <XCircle size={15} /> Decline
+                        </motion.button>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
               </div>
             </div>
           )}

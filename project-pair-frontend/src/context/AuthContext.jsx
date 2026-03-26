@@ -4,6 +4,10 @@ import { connectSocket, disconnectSocket } from '../services/socket'
 
 const AuthContext = createContext(null)
 
+// Shared logout callback — set by AppProvider after mount
+let _onLogoutCallback = null
+export const setLogoutCallback = (fn) => { _onLogoutCallback = fn }
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -49,6 +53,7 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async () => {
     try { await authAPI.logout() } catch {}
     disconnectSocket()
+    if (_onLogoutCallback) _onLogoutCallback() // 🟠 FIX: reset AppContext socket state
     setUser(null)
     localStorage.removeItem('pp_token')
     localStorage.removeItem('pp_user')

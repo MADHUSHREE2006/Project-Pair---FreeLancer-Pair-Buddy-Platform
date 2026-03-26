@@ -37,6 +37,13 @@ export const disconnectSocket = () => {
   }
 }
 
+export const updateSocketToken = (newToken) => {
+  if (socket) {
+    socket.auth = { token: newToken }
+    socket.disconnect().connect()
+  }
+}
+
 export const getSocket = () => socket
 
 export default { connectSocket, disconnectSocket, getSocket }

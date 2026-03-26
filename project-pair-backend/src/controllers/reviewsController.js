@@ -1,6 +1,7 @@
 import { Review, User, PairRequest } from '../models/index.js'
 import { Op } from 'sequelize'
 import sequelize from '../config/database.js'
+import { createNotification } from './notificationsController.js'
 
 // GET /api/reviews/:userId
 export const getUserReviews = async (req, res) => {
@@ -64,6 +65,17 @@ export const createReview = async (req, res) => {
     const full = await Review.findByPk(review.id, {
       include: [{ model: User, as: 'reviewer', attributes: ['id', 'name', 'email'] }],
     })
+
+    // Notify reviewee
+    const reviewer = await User.findByPk(reviewer_id, { attributes: ['name'] })
+    await createNotification({
+      user_id: reviewee_id,
+      type: 'new_review',
+      title: 'New Review Received ⭐',
+      body: `${reviewer.name} left you a ${rating}-star review`,
+      link: `/profile`,
+    })
+
     res.status(201).json(full)
   } catch (err) {
     res.status(500).json({ error: err.message })

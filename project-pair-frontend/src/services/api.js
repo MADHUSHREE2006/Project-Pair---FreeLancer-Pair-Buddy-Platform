@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { updateSocketToken } from './socket'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -6,10 +7,9 @@ const api = axios.create({
   baseURL: BASE,
   headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
-  withCredentials: true, // send httpOnly refresh cookie
+  withCredentials: true,
 })
 
-// Attach access token on every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pp_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -24,7 +24,6 @@ const processQueue = (error, token = null) => {
   failedQueue = []
 }
 
-// Auto-refresh access token on 401
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
@@ -45,6 +44,7 @@ api.interceptors.response.use(
         const newToken = res.data.token
         localStorage.setItem('pp_token', newToken)
         api.defaults.headers.common.Authorization = `Bearer ${newToken}`
+        updateSocketToken(newToken) // 🔴 FIX: refresh socket auth token
         processQueue(null, newToken)
         original.headers.Authorization = `Bearer ${newToken}`
         return api(original)
@@ -65,7 +65,6 @@ api.interceptors.response.use(
   }
 )
 
-// ── Auth ──────────────────────────────────────────────
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
@@ -76,13 +75,11 @@ export const authAPI = {
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 }
 
-// ── Users ──────────────────────────────────────────────
 export const usersAPI = {
   getOne: (id) => api.get(`/users/${id}`),
   updateMe: (data) => api.put('/users/me', data),
 }
 
-// ── Projects ──────────────────────────────────────────
 export const projectsAPI = {
   getAll: (params) => api.get('/projects', { params }),
   getOne: (id) => api.get(`/projects/${id}`),
@@ -91,7 +88,6 @@ export const projectsAPI = {
   delete: (id) => api.delete(`/projects/${id}`),
 }
 
-// ── Proposals ─────────────────────────────────────────
 export const proposalsAPI = {
   send: (data) => api.post('/proposals', data),
   getMine: () => api.get('/proposals/mine'),
@@ -99,7 +95,6 @@ export const proposalsAPI = {
   respond: (id, status) => api.put(`/proposals/${id}`, { status }),
 }
 
-// ── Tasks ─────────────────────────────────────────────
 export const tasksAPI = {
   getByProject: (projectId) => api.get(`/tasks/project/${projectId}`),
   create: (data) => api.post('/tasks', data),
@@ -107,27 +102,23 @@ export const tasksAPI = {
   delete: (id) => api.delete(`/tasks/${id}`),
 }
 
-// ── Notifications ──────────────────────────────────────
 export const notificationsAPI = {
   getAll: () => api.get('/notifications'),
   markAllRead: () => api.put('/notifications/read-all'),
   markOneRead: (id) => api.put(`/notifications/${id}/read`),
 }
 
-// ── Reviews ────────────────────────────────────────────
 export const reviewsAPI = {
   getForUser: (userId) => api.get(`/reviews/${userId}`),
   create: (data) => api.post('/reviews', data),
 }
 
-// ── Messages ───────────────────────────────────────────
 export const messagesAPI = {
   getConversations: () => api.get('/messages/conversations'),
   getConversation: (userId) => api.get(`/messages/${userId}`),
   send: (data) => api.post('/messages', data),
 }
 
-// ── Upload ─────────────────────────────────────────────
 export const uploadAPI = {
   avatar: (file) => {
     const fd = new FormData(); fd.append('avatar', file)
@@ -139,7 +130,6 @@ export const uploadAPI = {
   },
 }
 
-// ── Analytics ──────────────────────────────────────────
 export const analyticsAPI = {
   get: () => api.get('/analytics'),
 }
